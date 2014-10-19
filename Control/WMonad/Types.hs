@@ -65,7 +65,7 @@ instance Monad W where
     WDone (x, s) >>= f = buffer' s (f x) where
         buffer' s (WDone (x, s')) = WDone (x, s <> s')
         buffer' s (WStep (Output o w)) = WStep (Output o (buffer' s w))
-        buffer' s (WStep (Processing g)) = WStep (Processing (g . (s <>)))
+        buffer' s (WStep (Processing g)) = if null s then WStep (Processing g) else g s
     WStep wf >>= f = case wf of
         Output o w -> WStep $ Output o (w >>= f)
         Processing g -> WStep . Processing $ (\s -> g s >>= f)
@@ -83,5 +83,5 @@ instance MonadConn W where
 
 fromW :: MonadConn m => W a -> m a
 fromW (WDone (x, s)) = buffer s >> return x
-fromW (WStep (Processing f)) = process (\s -> Left . fromW $ f s)
+fromW (WStep (Processing f)) = process (Left . fromW . f)
 fromW (WStep (Output o x)) = output o >> fromW x

@@ -15,7 +15,7 @@ import Data.Functor
 import Data.Word
 import System.IO (hFlush, stdout)
 
-prog :: StdIOConn ()
+prog :: W ()
 prog = do
     s <- getLine
     output . pack . show $ s
@@ -27,11 +27,8 @@ prog2 = do
     output . pack . show $ w
     prog2
 
-simple :: W ()
-simple = process (\s -> Left (output s)) >> simple
-
 runStdIOConn :: StdIOConn () -> IO ()
 runStdIOConn p = fst <$> runStateT (asStateT p) empty
 
 main :: IO ()
-main = runStdIOConn . fromW $ simple
+main = runStdIOConn . fromW $ prog
