@@ -27,8 +27,11 @@ prog2 = do
     output . pack . show $ w
     prog2
 
+simple :: W ()
+simple = process (\s -> Left (output s)) >> simple
+
 runStdIOConn :: StdIOConn () -> IO ()
 runStdIOConn p = fst <$> runStateT (asStateT p) empty
 
 main :: IO ()
-main = runStdIOConn . fromW $ prog2
+main = runStdIOConn . fromW $ simple

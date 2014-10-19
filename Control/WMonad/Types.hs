@@ -21,7 +21,9 @@ import System.IO (stdin)
 class Monad m => MonadConn m where
     process :: (ByteString -> Either (m a) (a, ByteString)) -> m a
     output :: ByteString -> m ()
+
     buffer :: ByteString -> m ()
+    buffer s = process (\s' -> Right ((), s <> s'))
 
 newtype StdIOConn a = StdIOConn { asStateT :: StateT ByteString IO a }
     deriving (Functor, Monad, Applicative, MonadIO)
@@ -49,12 +51,10 @@ instance MonadConn StdIOConn where
 -- Suspension functor for the W monad
 data WF a = Processing (ByteString -> a)
           | Output ByteString a
-          | Buffer ByteString a
 
 instance Functor WF where
     fmap f (Processing g) = Processing (f . g)
     fmap f (Output o x) = Output o (f x)
-    fmap f (Buffer s x) = Buffer s (f x)
 
 -- The W Monad is the initial MonadConn
 data W a = WDone (a, ByteString)
@@ -62,11 +62,13 @@ data W a = WDone (a, ByteString)
 
 instance Monad W where
     return x = WDone (x, empty)
-    WDone (x, s) >>= f = buffer s >> (f x)
+    WDone (x, s) >>= f = buffer' s (f x) where
+        buffer' s (WDone (x, s')) = WDone (x, s <> s')
+        buffer' s (WStep (Output o w)) = WStep (Output o (buffer' s w))
+        buffer' s (WStep (Processing g)) = WStep (Processing (g . (s <>)))
     WStep wf >>= f = case wf of
         Output o w -> WStep $ Output o (w >>= f)
-        Processing g -> WStep . Processing $ \s -> g s >>= f
-        Buffer s w -> WStep $ Buffer s (w >>= f)
+        Processing g -> WStep . Processing $ (\s -> g s >>= f)
 
 instance Functor W where
     fmap = liftM
@@ -78,10 +80,8 @@ instance Applicative W where
 instance MonadConn W where
     process f = WStep . Processing $ either id WDone . f
     output x = WStep . Output x $ return ()
-    buffer s = WStep . Buffer s $ return ()
 
 fromW :: MonadConn m => W a -> m a
 fromW (WDone (x, s)) = buffer s >> return x
-fromW (WStep (Processing f)) = process (Left . fromW . f)
+fromW (WStep (Processing f)) = process (\s -> Left . fromW $ f s)
 fromW (WStep (Output o x)) = output o >> fromW x
-fromW (WStep (Buffer s x)) = buffer s >> fromW x
