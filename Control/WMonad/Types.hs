@@ -2,23 +2,26 @@
 module Control.WMonad.Types where
 
 import Prelude hiding (putStr, getLine, null)
-import Control.Applicative
+import Control.Applicative hiding (empty)
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.ByteString (
     ByteString,
-    putStr,
+    empty,
     getLine,
     hGetSome,
     null,
+    putStr,
     )
 import qualified Data.ByteString as BS
+import Data.Monoid ((<>))
 import System.IO (stdin)
 
 class Monad m => MonadConn m where
     process :: (ByteString -> Either (m a) (a, ByteString)) -> m a
     output :: ByteString -> m ()
+    buffer :: ByteString -> m ()
 
 newtype StdIOConn a = StdIOConn { asStateT :: StateT ByteString IO a }
     deriving (Functor, Monad, Applicative, MonadIO)
@@ -41,3 +44,44 @@ instance MonadConn StdIOConn where
                 Left m -> put BS.empty >> m
                 Right (x, s') -> put s' >> return x
     output = liftIO . putStr
+    buffer s = modify (s <>)
+
+-- Suspension functor for the W monad
+data WF a = Processing (ByteString -> a)
+          | Output ByteString a
+          | Buffer ByteString a
+
+instance Functor WF where
+    fmap f (Processing g) = Processing (f . g)
+    fmap f (Output o x) = Output o (f x)
+    fmap f (Buffer s x) = Buffer s (f x)
+
+-- The W Monad is the initial MonadConn
+data W a = WDone (a, ByteString)
+         | WStep (WF (W a))
+
+instance Monad W where
+    return x = WDone (x, empty)
+    WDone (x, s) >>= f = buffer s >> (f x)
+    WStep wf >>= f = case wf of
+        Output o w -> WStep $ Output o (w >>= f)
+        Processing g -> WStep . Processing $ \s -> g s >>= f
+        Buffer s w -> WStep $ Buffer s (w >>= f)
+
+instance Functor W where
+    fmap = liftM
+
+instance Applicative W where
+    pure = return
+    (<*>) = ap
+
+instance MonadConn W where
+    process f = WStep . Processing $ either id WDone . f
+    output x = WStep . Output x $ return ()
+    buffer s = WStep . Buffer s $ return ()
+
+fromW :: MonadConn m => W a -> m a
+fromW (WDone (x, s)) = buffer s >> return x
+fromW (WStep (Processing f)) = process (Left . fromW . f)
+fromW (WStep (Output o x)) = output o >> fromW x
+fromW (WStep (Buffer s x)) = buffer s >> fromW x

@@ -19,18 +19,16 @@ prog :: StdIOConn ()
 prog = do
     s <- getLine
     output . pack . show $ s
-    liftIO $ hFlush stdout
     prog
 
-prog2 :: StdIOConn ()
+prog2 :: W ()
 prog2 = do
-    w <- read :: StdIOConn Word32
+    w <- read :: W Word32
     output . pack . show $ w
-    liftIO $ hFlush stdout
     prog2
 
 runStdIOConn :: StdIOConn () -> IO ()
 runStdIOConn p = fst <$> runStateT (asStateT p) empty
 
 main :: IO ()
-main = runStdIOConn prog2
+main = runStdIOConn . fromW $ prog2
