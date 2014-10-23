@@ -6,6 +6,7 @@ import Control.Applicative hiding (empty)
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.State
+import Control.Monad.Reader
 import Data.ByteString (
     ByteString,
     empty,
@@ -16,6 +17,8 @@ import Data.ByteString (
     )
 import qualified Data.ByteString as BS
 import Data.Monoid ((<>))
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import Network.Socket.ByteString
 import System.IO (stdin)
 
 class Monad m => MonadConn m where
@@ -24,29 +27,6 @@ class Monad m => MonadConn m where
 
     buffer :: ByteString -> m ()
     buffer s = process (\s' -> Right ((), s <> s'))
-
-newtype StdIOConn a = StdIOConn { asStateT :: StateT ByteString IO a }
-    deriving (Functor, Monad, Applicative, MonadIO)
-
-instance MonadState ByteString StdIOConn where
-    get = StdIOConn get
-    put = StdIOConn . put
-
-instance MonadConn StdIOConn where
-    process f = do
-        s <- get
-        if null s
-        then do
-            s' <- liftIO (hGetSome stdin 1024)
-            case f s' of
-                Left m -> put BS.empty >> m
-                Right (x, s'') -> put s'' >> return x
-        else do
-            case f s of
-                Left m -> put BS.empty >> m
-                Right (x, s') -> put s' >> return x
-    output = liftIO . putStr
-    buffer s = modify (s <>)
 
 -- Suspension functor for the W monad
 data WF a = Processing (ByteString -> a)
@@ -85,3 +65,44 @@ fromW :: MonadConn m => W a -> m a
 fromW (WDone (x, s)) = buffer s >> return x
 fromW (WStep (Processing f)) = process (Left . fromW . f)
 fromW (WStep (Output o x)) = output o >> fromW x
+
+newtype StdIOConn a = StdIOConn { asStateT :: StateT ByteString IO a }
+    deriving (Functor, Monad, Applicative, MonadIO, MonadState ByteString)
+
+instance MonadConn StdIOConn where
+    process f = do
+        s <- get
+        if null s
+        then do
+            s' <- liftIO (hGetSome stdin 1024)
+            case f s' of
+                Left m -> put BS.empty >> m
+                Right (x, s'') -> put s'' >> return x
+        else do
+            case f s of
+                Left m -> put BS.empty >> m
+                Right (x, s') -> put s' >> return x
+    output = liftIO . putStr
+    buffer s = modify (s <>)
+
+newtype SockConn a = SockConn { sockStack :: ReaderT Socket (StateT ByteString IO) a }
+    deriving (Functor, Monad, Applicative, MonadIO, MonadState ByteString, MonadReader Socket)
+
+instance MonadConn SockConn where
+    process f = do
+        s <- get
+        if null s
+        then do
+            sock <- ask
+            s' <- liftIO (recv sock 1024)
+            case f s' of
+                Left m -> put BS.empty >> m
+                Right (x, s'') -> put s'' >> return x
+        else do
+            case f s of
+                Left m -> put BS.empty >> m
+                Right (x, s') -> put s' >> return x
+    output o = do
+        sock <- ask
+        liftIO $ sendAll sock o
+    buffer s = modify (s <>)
