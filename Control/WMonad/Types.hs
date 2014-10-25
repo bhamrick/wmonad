@@ -73,15 +73,15 @@ instance MonadConn StdIOConn where
     process f = do
         s <- get
         if null s
-        then do
-            s' <- liftIO (hGetSome stdin 1024)
-            case f s' of
-                Left m -> put BS.empty >> m
-                Right (x, s'') -> put s'' >> return x
-        else do
-            case f s of
-                Left m -> put BS.empty >> m
-                Right (x, s') -> put s' >> return x
+            then do
+                s' <- liftIO (hGetSome stdin 1024)
+                case f s' of
+                    Left m -> put BS.empty >> m
+                    Right (x, s'') -> put s'' >> return x
+            else do
+                case f s of
+                    Left m -> put BS.empty >> m
+                    Right (x, s') -> put s' >> return x
     output = liftIO . putStr
     buffer s = modify (s <>)
 
@@ -92,16 +92,16 @@ instance MonadConn SockConn where
     process f = do
         s <- get
         if null s
-        then do
-            sock <- ask
-            s' <- liftIO (recv sock 1024)
-            case f s' of
-                Left m -> put BS.empty >> m
-                Right (x, s'') -> put s'' >> return x
-        else do
-            case f s of
-                Left m -> put BS.empty >> m
-                Right (x, s') -> put s' >> return x
+            then do
+                sock <- ask
+                s' <- liftIO (recv sock 1024)
+                case f s' of
+                    Left m -> put BS.empty >> m
+                    Right (x, s'') -> put s'' >> return x
+            else do
+                case f s of
+                    Left m -> put BS.empty >> m
+                    Right (x, s') -> put s' >> return x
     output o = do
         sock <- ask
         liftIO $ sendAll sock o
