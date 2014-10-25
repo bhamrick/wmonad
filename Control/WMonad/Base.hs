@@ -1,6 +1,6 @@
 module Control.WMonad.Base where
 
-import Prelude hiding (drop, length, read)
+import Prelude hiding (drop, length, read, take)
 import Control.Monad
 import Control.WMonad.Types
 import Data.Attoparsec.ByteString hiding (skip)
@@ -95,3 +95,12 @@ instance Parsable Integer where
         where
         foldBytes [] = 0
         foldBytes (b:bs) = fromIntegral b .|. shift (foldBytes bs) 8
+
+instance Parsable ByteString where
+    parser = do
+        len <- parser :: Parser Word32
+        take (fromIntegral len)
+
+instance Serializable ByteString where
+    serialize s = let len = fromIntegral (length s) :: Word32 in
+                  serialize len <> s
