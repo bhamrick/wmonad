@@ -16,7 +16,10 @@ cabal-version:       >=1.8
 
 library
   exposed-modules:     Control.WMonad
-  -- other-modules:       
+                     , Control.WMonad.Runtime.Socket
+  other-modules:       Control.WMonad.Base
+                     , Control.WMonad.Types
+                     , Control.WMonad.Wiring
   build-depends:       base >=4.6
                      , attoparsec ==0.12.*
                      , bytestring ==0.10.*
